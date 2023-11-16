@@ -6,9 +6,21 @@ from aiohttp import ClientSession
 import asyncio
 from pydub import AudioSegment
 import io
+from typing import Optional
 
 
 client = instructor.patch(OpenAI())
+
+
+class PodcastSectionOverview(BaseModel):
+    section_length_in_mins: int 
+    section_description: str = Field(..., description="List of high level episode content.")
+    section_sound_effect_into: Optional[str] = Field(..., description="An optional sound effect to play between the last section and this section")
+
+
+class PodcastSection(BaseModel):
+    episode_length_in_mins: int
+    episode_transcript: str    
 
 
 class PodcastOverview(BaseModel):
@@ -16,19 +28,19 @@ class PodcastOverview(BaseModel):
     description: str
     podcast_length_in_mins: int
     description_of_episode_cover_image: str
-    episodes: list[str] = Field(..., description="List of high level episode content.")
+    sections: list[PodcastSectionOverview]
 
 
 def get_podcast_overview(input_text, podcast_length) -> PodcastOverview:
     prompt = f"""
-You are a podcast host that is explaining {input_text} to your audience.
-You are writing a podcast that consists of {1} episodes of {1} minutes each.
+You are a podcast host that has been asked to produce a podcast on {input_text} to your audience.
+The podcast should be about {podcast_length} minutes long.
 
-Before we start writing the detailed transcript, lets write a outline of the podcast.
-Describe the title of the podcast, the description of the podcast, 
-the summary of the podcast, the description of the podcast cover image.
+Write a outline of the podcast, consisting of several sections.
+Each section will be read one after the other as a continues transcript.
 
-Then describe each episode of the podcast, with a high level summary of what you will talk about in each episode.
+Provide the title of the podcast, the description of the podcast, a high-level summary of the podcast,
+a visual description of the podcast cover image and describe the high level content for each section.
 """
     print(f"Prompt: {prompt}")
     overview: PodcastOverview = client.chat.completions.create(
@@ -42,13 +54,8 @@ Then describe each episode of the podcast, with a high level summary of what you
     return overview
 
 
-class PodcastSection(BaseModel):
-    episode_length_in_mins: int
-    episode_transcript: str
-
-
 def get_podcast_section(
-    podcast_overview: PodcastOverview, section
+    podcast_overview: PodcastOverview, section: PodcastSectionOverview
 ) -> PodcastSection:
     """Generate a podcast section from a podcast overview."""
     prompt = f"""
@@ -56,12 +63,12 @@ You are a podcast host that is explaining {podcast_overview.title} to your audie
 The podcast is about {podcast_overview.description}.
 
 The podcast has the following episodes: 
-{podcast_overview.episodes}
+{[s.description for s in podcast_overview.sections]}
 
-You are now writing the transcript for the {section} of the podcast.
+You are now writing the detailed transcript for the section {section.description} of the podcast.
 
-Write the detailed transcript for this podcast episode.
-The episode should be about 5 minutes long.
+Write the detailed transcript for this podcast section. 
+It will be concatenated with the other sections to form the full podcast transcript.
 """
     print(f"Prompt: {prompt}")
     section: PodcastSection = client.chat.completions.create(
@@ -88,8 +95,8 @@ def get_podcast(input_text: str, podcast_length: int) -> PodcastOverview:
     #         for episode in podcast_overview.episodes
     #     ]
     # )
-    for episode in podcast_overview.episodes:
-        section = get_podcast_section(podcast_overview, episode)
+    for section in podcast_overview.sections:
+        section = get_podcast_section(podcast_overview, section)
         podcast.transcript += "\n\n" + section.episode_transcript
 
     return podcast
