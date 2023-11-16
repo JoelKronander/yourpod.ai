@@ -21,10 +21,10 @@ else:
         voice_cloning_file = st.sidebar.file_uploader(
             "Upload an audio file to clone the voice from.", type=["wav"]
         )
-        # create a temp file from the uploaded file
-        with open("temp.wav", "wb") as f:
-            f.write(voice_cloning_file.read())
         if voice_cloning_file:
+            # create a temp file from the uploaded file
+            with open("temp.wav", "wb") as f:
+                f.write(voice_cloning_file.read())
             voice = clone(
                 name="my_generated_voice"+str(datetime.datetime.now()),
                 description="Custom voice", # Optional

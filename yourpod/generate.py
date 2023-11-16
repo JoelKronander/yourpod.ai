@@ -22,7 +22,7 @@ class PodcastOverview(BaseModel):
 def get_podcast_overview(input_text, podcast_length) -> PodcastOverview:
     prompt = f"""
 You are a podcast host that is explaining {input_text} to your audience.
-You are writing a podcast that consists of {1} episodes of {podcast_length//1} minutes each.
+You are writing a podcast that consists of {1} episodes of {1} minutes each.
 
 Before we start writing the detailed transcript, lets write a outline of the podcast.
 Describe the title of the podcast, the description of the podcast, 
@@ -101,7 +101,7 @@ def get_podcast_image(cover_image_description: str) -> str:
 
 
 def text_2_speech(prompt, voice):
-    audio_path = f"{voice}.wav"
+    audio_path = f"temp.mp3"
     print(f"Generating audio for voice {voice}, to file {audio_path}")
 
     # split prompt into chunks less than 5000 characters
