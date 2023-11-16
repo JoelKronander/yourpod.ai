@@ -5,6 +5,7 @@ import generate
 from elevenlabs import clone, voices, set_api_key
 import asyncio
 
+st.title("YourPod.ai")
 
 ## Sidebar controls
 # Add a selectbox to the sidebar:
@@ -14,12 +15,27 @@ if not elevenlabs_api_key:
     st.sidebar.warning("Please enter your Elevenlabs API key!", icon="⚠")
 else:
     set_api_key(elevenlabs_api_key)
-
-    voice = st.sidebar.selectbox(
-        "Pick your podcast host voice.", [v.name for v in voices()]
-    )
+    # voice cloning
+    voice_cloning = st.sidebar.checkbox("Voice cloning")
+    if voice_cloning:
+        voice_cloning_file = st.sidebar.file_uploader(
+            "Upload an audio file to clone the voice from.", type=["wav"]
+        )
+        # create a temp file from the uploaded file
+        with open("temp.wav", "wb") as f:
+            f.write(voice_cloning_file.read())
+        if voice_cloning_file:
+            voice = clone(
+                name="my_generated_voice"+str(datetime.datetime.now()),
+                description="Custom voice", # Optional
+                files=['temp.wav'],
+            )
+    else:
+        voice = st.sidebar.selectbox(
+            "Pick your podcast host voice.", [v.name for v in voices()]
+        )
     podcast_length = st.sidebar.slider(
-        "How long would you like the podcast to be? (mins)", 5, 15, 5
+        "How long would you like the podcast to be? (mins)", 1, 5, 1
     )
 
 ## Main window
@@ -38,7 +54,7 @@ with st.form("my_form"):
         st.warning("Please enter your OpenAI API key!", icon="⚠")
     if submitted and openai_api_key.startswith("sk-"):
         st.success("Generating podcast... This can take a few minutes.", icon="🎙")
-        podcast = asyncio.run(generate.get_podcast(text, podcast_length))
+        podcast = generate.get_podcast(text, podcast_length)
         st.info(podcast.transcript)
 
         cover_image_url = generate.get_podcast_image(
