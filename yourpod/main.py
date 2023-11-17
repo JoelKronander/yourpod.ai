@@ -28,7 +28,7 @@ openai_api_key = st.sidebar.text_input("OpenAI API Key")
 if openai_api_key.startswith("sk-"):
     st.session_state.openai_api_key = openai_api_key
     st.session_state.podcast_length = st.sidebar.slider(
-        "How long would you like the podcast to be? (mins)", 2, 15, 5
+        "How long would you like the podcast to be? (mins)", 2, 25, 5
     )
     st.session_state.openai_voice = st.sidebar.selectbox(
         "Pick your OpenAI podcast host voice.", ["alloy", "echo", "fable", "onyx", "nova", "shimmer"], index=5
