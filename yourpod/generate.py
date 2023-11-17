@@ -1,4 +1,4 @@
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 import instructor
 from pydantic import BaseModel, Field
 from elevenlabs import voices, generate, set_api_key
@@ -7,40 +7,54 @@ import asyncio
 from pydub import AudioSegment
 import io
 from typing import Optional
-
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+import os
 
 client = instructor.patch(OpenAI())
-
+aclient = instructor.apatch(AsyncOpenAI())
 
 class PodcastSectionOverview(BaseModel):
-    section_length_in_mins: int 
-    section_description: str = Field(..., description="List of high level episode content.")
-    section_sound_effect_into: Optional[str] = Field(..., description="An optional sound effect to play between the last section and this section")
-
-
-class PodcastSection(BaseModel):
-    episode_length_in_mins: int
-    episode_transcript: str    
+    length_in_seconds: int = Field(..., description="The length of the section in seconds.")
+    description: str = Field(..., description="List of high level episode content.")
+    sound_effect_intro: Optional[str] = Field(..., description="An optional sound effect to play between the last section and this section")
 
 
 class PodcastOverview(BaseModel):
     title: str
     description: str
-    podcast_length_in_mins: int
-    description_of_episode_cover_image: str
-    sections: list[PodcastSectionOverview]
+    section_overviews: list[PodcastSectionOverview]
+
+
+class PodcastSection(BaseModel):
+    length_in_seconds: int
+    transcript: str
+    sound_effect_intro: Optional[str] = Field(..., description="A short description of optional sound effect to play between the last section and this section")
+
+
+
+class Podcast(PodcastOverview):
+    """The full podcast, including the transcript."""
+    transcript: str
+    length_in_minutes: float
+    sections: list[PodcastSection]
 
 
 def get_podcast_overview(input_text, podcast_length) -> PodcastOverview:
     prompt = f"""
-You are a podcast host that has been asked to produce a podcast on {input_text} to your audience.
-The podcast should be about {podcast_length} minutes long.
+You are a podcast producer that has been asked to produce a podcast on {input_text}.
+The podcast should be about {podcast_length} minutes long. 
+A single host will be reading the podcast transcript. Plase make it to the point, but also engaging.
 
 Write a outline of the podcast, consisting of several sections.
-Each section will be read one after the other as a continues transcript.
+Each section will be read one after the other as a contionus podcast with no breaks in between.
+Each section should be between 60 and 320 seconds long.
+Don't make the podcast too long, it should be about {podcast_length} minutes long. 
+Use as few sections as possible to make the podcast about {podcast_length} minutes long.
+Between each section, you can optionally add a sound effect, note that that a sound effect might not be needed between all sections.
 
-Provide the title of the podcast, the description of the podcast, a high-level summary of the podcast,
-a visual description of the podcast cover image and describe the high level content for each section.
+Provide the title of the podcast, the description of the podcast, a visual description of the podcast cover image
+and describe the high level content, and length in minutes, and optionally sound effect for each section.
 """
     print(f"Prompt: {prompt}")
     overview: PodcastOverview = client.chat.completions.create(
@@ -49,23 +63,31 @@ a visual description of the podcast cover image and describe the high level cont
         messages=[
             {"role": "user", "content": prompt},
         ],
+        max_retries=2,
     )
     print(f"Overview: {overview}")
     return overview
 
 
 def get_podcast_section(
-    podcast_overview: PodcastOverview, section: PodcastSectionOverview
+    podcast_overview: PodcastOverview, section: PodcastSectionOverview, podcast: Podcast, desired_length: int
 ) -> PodcastSection:
     """Generate a podcast section from a podcast overview."""
     prompt = f"""
 You are a podcast host that is explaining {podcast_overview.title} to your audience.
 The podcast is about {podcast_overview.description}.
 
-The podcast has the following episodes: 
-{[s.description for s in podcast_overview.sections]}
+The podcast has the following episodes, with estimated length in seconds:
+{[[s.description, s.length_in_seconds] for s in podcast_overview.section_overviews]}
 
-You are now writing the detailed transcript for the section {section.description} of the podcast.
+Before this section, the transcript is:
+{podcast.transcript}
+
+You are now writing the detailed transcript for the section {section.description}.
+The transcipt for this section was initally estimated to be about {section.length_in_seconds} seconds to read, but please adjust it as needed to stay make the complete podcast about {desired_length} minutes long.
+The estimated length of the podcast so far is {podcast.length_in_minutes}. 
+The podcast should be about {desired_length} minutes long, so there is about {desired_length - podcast.length_in_minutes} minutes left for the rest of the podcast sections.
+A single host will be reading the podcast transcript. Plase make it to the point, but also engaging.
 
 Write the detailed transcript for this podcast section. 
 It will be concatenated with the other sections to form the full podcast transcript.
@@ -82,22 +104,14 @@ It will be concatenated with the other sections to form the full podcast transcr
     return section
 
 
-class Podcast(PodcastOverview):
-    transcript: str
-
-
 def get_podcast(input_text: str, podcast_length: int) -> PodcastOverview:
     podcast_overview: PodcastOverview = get_podcast_overview(input_text, podcast_length)
-    podcast: Podcast = Podcast(**podcast_overview.dict(), transcript="")
-    # sections = await asyncio.gather(
-    #     *[
-    #         get_podcast_section(podcast_overview, episode)
-    #         for episode in podcast_overview.episodes
-    #     ]
-    # )
-    for section in podcast_overview.sections:
-        section = get_podcast_section(podcast_overview, section)
-        podcast.transcript += "\n\n" + section.episode_transcript
+    podcast: Podcast = Podcast(**podcast_overview.dict(), length_in_minutes=0, transcript="", sections=[])
+    for section_overview in podcast_overview.section_overviews:
+        section = get_podcast_section(podcast_overview, section_overview, podcast, desired_length=podcast_length)
+        podcast.transcript += "\n\n\n" + f"[{section.sound_effect_intro}]" + "\n\n" + section.transcript 
+        podcast.length_in_minutes += section.length_in_seconds / 60
+        podcast.sections.append(section)
 
     return podcast
 
@@ -129,4 +143,58 @@ def text_2_speech(prompt, voice):
     concatenated_audio.export(buffer, format="mp3")
     raw_audio_bytes = buffer.getvalue()
 
-    return audio_path, raw_audio_bytes
+    return raw_audio_bytes
+
+
+async def generate_audio_chunk(client, voice, chunk, nr):
+    response = await client.audio.speech.create(
+        model="tts-1",
+        voice=voice,
+        input=chunk
+    )
+    with NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
+        temp_file_path = temp_file.name  # Get the file path
+        response.stream_to_file(temp_file_path)  # Use the file path here
+    chunk_audio = AudioSegment.from_mp3(temp_file_path)  # Use the file path to load the audio
+    # Optionally delete the temporary file if needed
+    os.remove(temp_file_path)
+    return chunk_audio
+
+
+async def text_2_speech_openai(podcast: Podcast, voice):
+    client = AsyncOpenAI()
+    speech_file_path = Path(__file__).parent / "speech.mp3"
+
+    print(f"Generating audio for voice {voice}, to file {speech_file_path}")
+
+    chunks = [section.transcript for section in podcast.sections]
+
+    # make sure that each chunk is less than 4000 characters, otherwise split the chunk in two entries
+    while any([len(chunk) > 4000 for chunk in chunks]):
+        new_chunks = []
+        for chunk in chunks:
+            if len(chunk) > 4000:
+                new_chunks.append(chunk[:4000])
+                new_chunks.append(chunk[4000:])
+            else:
+                new_chunks.append(chunk)
+        chunks = new_chunks
+
+    tasks = []
+    for nr, chunk in enumerate(chunks):
+        tasks.append(generate_audio_chunk(client, voice, chunk, nr))
+    chunk_audios = await asyncio.gather(*tasks)
+
+    concatenated_audio = AudioSegment.empty()  # Creating an empty audio segment
+    for chunk_audio in chunk_audios:
+        concatenated_audio += chunk_audio
+
+    # Export concatenated audio to a file
+    with NamedTemporaryFile(suffix=".mp3", delete=True) as temp_file:
+        temp_file_path = temp_file.name  # Get the file path
+        concatenated_audio.export(temp_file_path, format="mp3")
+        # read audio file and return raw bytes
+        with open(temp_file_path, "rb") as f:
+            raw_audio_bytes = f.read()
+
+    return raw_audio_bytes

@@ -1,123 +1,97 @@
 import streamlit as st
 import datetime
-import requests
+import asyncio
 import generate
 from elevenlabs import clone, voices, set_api_key
-import asyncio
+
+st.set_page_config(
+    page_title="YourPod.ai",
+    page_icon="🎙",
+    layout="centered",
+    initial_sidebar_state="auto",
+)
+
+def initialize_session():
+    keys = ['openai_api_key', 'elevenlabs_api_key', 'voice_cloning_file', 
+            'openai_voice', 'elevenlabs_voice', 'voice_cloning_temp_file', 'podcast_length']
+    for key in keys:
+        if key not in st.session_state:
+            st.session_state[key] = None
+
+initialize_session()
 
 st.title("YourPod.ai")
 
-## Sidebar controls
-# Add a selectbox to the sidebar:
-elevenlabs_api_key = st.sidebar.text_input("Elevenlabs API Key")
+# Sidebar controls
 openai_api_key = st.sidebar.text_input("OpenAI API Key")
-if not elevenlabs_api_key:
-    st.sidebar.warning("Please enter your Elevenlabs API key!", icon="⚠")
+if openai_api_key.startswith("sk-"):
+    st.session_state.openai_api_key = openai_api_key
+    st.session_state.podcast_length = st.sidebar.slider(
+        "How long would you like the podcast to be? (mins)", 2, 15, 5
+    )
+    st.session_state.openai_voice = st.sidebar.selectbox(
+        "Pick your OpenAI podcast host voice.", ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+    )
 else:
+    st.sidebar.warning("Please enter your Open AI key", icon="⚠️")
+
+elevenlabs_api_key = st.sidebar.text_input("Elevenlabs API Key")
+if elevenlabs_api_key:
+    st.session_state.elevenlabs_api_key = elevenlabs_api_key
     set_api_key(elevenlabs_api_key)
-    # voice cloning
     voice_cloning = st.sidebar.checkbox("Voice cloning")
     if voice_cloning:
         voice_cloning_file = st.sidebar.file_uploader(
             "Upload an audio file to clone the voice from.", type=["wav"]
         )
         if voice_cloning_file:
-            # create a temp file from the uploaded file
-            with open("temp.wav", "wb") as f:
+            temp_file_name = f"temp_{st.session_state.session_id}.wav"
+            with open(temp_file_name, "wb") as f:
                 f.write(voice_cloning_file.read())
-            voice = clone(
-                name="my_generated_voice"+str(datetime.datetime.now()),
-                description="Custom voice", # Optional
-                files=['temp.wav'],
+            st.session_state.voice_cloning_temp_file = temp_file_name
+            st.session_state.elevenlabs_voice = clone(
+                name="my_generated_voice_"+str(datetime.datetime.now()),
+                description="Custom voice",
+                files=[temp_file_name],
             )
     else:
-        voice = st.sidebar.selectbox(
+        st.session_state.elevenlabs_voice = st.sidebar.selectbox(
             "Pick your podcast host voice.", [v.name for v in voices()]
         )
-    podcast_length = st.sidebar.slider(
-        "How long would you like the podcast to be? (mins)", 1, 5, 1
-    )
+else:
+    st.sidebar.warning("Please enter your Elevenlabs API key for more custom voices and voice cloning.", icon="⚠️")
 
-## Main window
+# Main window
 with st.form("my_form"):
-    text = st.text_area("What would you like to learn about?")
-    submitted = st.form_submit_button("Submit")
-    examples = st.text("Examples:")
-    example1 = st.text("Bitcoin")
-    example2 = st.text(
-        "Travel adventures, focusing on hidden gems and unique travel experiences across the globe?"
-    )
-    example3 = st.text(
-        "The future of work, focusing on the impact of automation and AI on the workforce?"
-    )
-    if not openai_api_key.startswith("sk-"):
-        st.warning("Please enter your OpenAI API key!", icon="⚠")
-    if submitted and openai_api_key.startswith("sk-"):
-        st.success("Generating podcast... This can take a few minutes.", icon="🎙")
-        podcast = generate.get_podcast(text, podcast_length)
-        st.info(podcast.transcript)
+    text = st.text_area("Create a podcast about...")
+    submitted = st.form_submit_button("Generate")
+    # Example texts (optional)
+    
+    if submitted:
+        if not st.session_state.openai_api_key:
+            st.warning("Please enter your OpenAI API key!", icon="⚠️")
+        else:
+            st.success("Generating podcast... This can take a few minutes.", icon="🎙")
+            with st.spinner('Wait for it...'):
+                input_text = text
+                podcast_overview = generate.get_podcast_overview(input_text, st.session_state.podcast_length)
+                st.success(f"Outline Done! -- Title: {podcast_overview.title} -- Sections To Generate: {len(podcast_overview.section_overviews)}", icon="✅")
+                podcast = generate.Podcast(**podcast_overview.dict(), length_in_minutes=0, transcript="", sections=[])
+                for nr, section_overview in enumerate(podcast_overview.section_overviews):
+                    section = generate.get_podcast_section(podcast_overview, section_overview, podcast, desired_length=st.session_state.podcast_length)
+                    if nr > 0 and section.sound_effect_intro:
+                        podcast.transcript += "\n\n" + f"[{section.sound_effect_intro}]"
+                    podcast.transcript += "\n\n" + section.transcript
+                    podcast.length_in_minutes += section.length_in_seconds / 60
+                    podcast.sections.append(section)
+                    st.success(f"Section {nr+1}/{len(podcast_overview.section_overviews)} Done!", icon="✅")
+            st.success("Transcript Done!", icon="✅")
+            st.info(podcast.transcript)
 
-        cover_image_url = generate.get_podcast_image(
-            podcast.description_of_episode_cover_image
-        )
-        st.image(cover_image_url, caption="Cover image", use_column_width=True)
-
-        _, audio = generate.text_2_speech(podcast.transcript, voice)
-        st.audio(audio)
-
-
-upload = st.button("Upload to Buzzsprout")
-if upload:
-    # upload audio to buzzsprout
-    # docs
-    #     POST /episodes.json will create a new episode with the included parameters.
-    # {
-    #   "title":"Too many or too few?",
-    #   "description":"",
-    #   "summary":"",
-    #   "artist":"Muffin Man",
-    #   "tags":"",
-    #   "published_at":"2019-09-12T03:00:00.000-04:00",
-    #   "duration":23462,
-    #   "guid":"Buzzsprout788880",
-    #   "inactive_at":null,
-    #   "episode_number":4,
-    #   "season_number":5,
-    #   "explicit":true,
-    #   "private":true,
-    #   "email_user_after_audio_processed": true,
-    #   "audio_url": "https://www.google.com/my_audio_file.mp4",
-    #   "artwork_url": "https://www.google.com/my_artwork_file.jpeg"
-    # }
-    BUZZSPROUT_API_TOKEN = "828bd25a81bce931c25885586cfa6ce8"
-
-    url = "https://www.buzzsprout.com/api/episodes"
-    payload = {
-        "title": "Test 1",
-        "description": text,
-        "summary": text,
-        "artist": "GPT4",
-        "published_at": datetime.datetime.now(),
-        "guid": "Buzzsprout788880",
-        "inactive_at": None,
-        "episode_number": 1,
-        "season_number": 1,
-        "explicit": True,
-        "private": True,
-        "audio_file": audio,
-        "artwork_url": "https://www.google.com/my_artwork_file.jpeg",
-    }
-    # Define the headers
-    headers = {
-        "Authorization": f"Token token={BUZZSPROUT_API_TOKEN}",
-        "Content-Type": "application/json",
-    }
-
-    response = requests.post(url, headers=headers, data=payload)
-
-    # Check the response
-    if response.status_code == 201:
-        print("Episode uploaded successfully!")
-    else:
-        print(f"Failed to upload episode. Status code: {response.status_code}")
-        print(f"Response: {response.text}")
+            with st.spinner('Generating Audio...'):
+                if st.session_state.elevenlabs_voice:
+                    audio = generate.text_2_speech(podcast.transcript, st.session_state.elevenlabs_voice)
+                else:
+                    # Use openai voice
+                    audio = asyncio.run(generate.text_2_speech_openai(podcast, st.session_state.openai_voice))
+            st.audio(audio)
