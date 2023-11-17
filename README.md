@@ -16,5 +16,5 @@ Voice Cloning: Optionally, upload an audio file for voice cloning.
 Contributions to enhance YourPod are welcome. Whether it's bug fixing, feature enhancement, or documentation improvement, your input is valuable!
 
 ## License
-YourPod is released under a MIT license. Please check the repository for more details.
+YourPod is released under a Apache 2.0 license. Please check the repository for more details.
 
