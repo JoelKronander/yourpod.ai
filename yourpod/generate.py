@@ -11,8 +11,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 import os
 
-client = instructor.patch(OpenAI())
-aclient = instructor.apatch(AsyncOpenAI())
+
 
 class PodcastSectionOverview(BaseModel):
     length_in_seconds: int = Field(..., description="The length of the section in seconds.")
@@ -32,7 +31,6 @@ class PodcastSection(BaseModel):
     sound_effect_intro: Optional[str] = Field(..., description="A short description of optional sound effect to play between the last section and this section")
 
 
-
 class Podcast(PodcastOverview):
     """The full podcast, including the transcript."""
     transcript: str
@@ -40,7 +38,8 @@ class Podcast(PodcastOverview):
     sections: list[PodcastSection]
 
 
-def get_podcast_overview(input_text, podcast_length) -> PodcastOverview:
+def get_podcast_overview(input_text, podcast_length, openai_api_key) -> PodcastOverview:
+    client = instructor.patch(OpenAI(api_key=openai_api_key))
     prompt = f"""
 You are a podcast producer that has been asked to produce a podcast on {input_text}.
 The podcast should be about {podcast_length} minutes long. 
@@ -48,7 +47,7 @@ A single host will be reading the podcast transcript. Plase make it to the point
 
 Write a outline of the podcast, consisting of several sections.
 Each section will be read one after the other as a contionus podcast with no breaks in between.
-Each section should be between 60 and 320 seconds long.
+Each section should be between 2 and 4 minutes long.
 Don't make the podcast too long, it should be about {podcast_length} minutes long. 
 Use as few sections as possible to make the podcast about {podcast_length} minutes long.
 Between each section, you can optionally add a sound effect, note that that a sound effect might not be needed between all sections.
@@ -70,8 +69,9 @@ and describe the high level content, and length in minutes, and optionally sound
 
 
 def get_podcast_section(
-    podcast_overview: PodcastOverview, section: PodcastSectionOverview, podcast: Podcast, desired_length: int
+    podcast_overview: PodcastOverview, section: PodcastSectionOverview, podcast: Podcast, desired_length: int, openai_api_key
 ) -> PodcastSection:
+    client = instructor.patch(OpenAI(api_key=openai_api_key))
     """Generate a podcast section from a podcast overview."""
     prompt = f"""
 You are a podcast host that is explaining {podcast_overview.title} to your audience.
@@ -104,7 +104,8 @@ It will be concatenated with the other sections to form the full podcast transcr
     return section
 
 
-def get_podcast(input_text: str, podcast_length: int) -> PodcastOverview:
+def get_podcast(input_text: str, podcast_length: int, openai_api_key) -> PodcastOverview:
+    client = instructor.patch(OpenAI(api_key=openai_api_key))
     podcast_overview: PodcastOverview = get_podcast_overview(input_text, podcast_length)
     podcast: Podcast = Podcast(**podcast_overview.dict(), length_in_minutes=0, transcript="", sections=[])
     for section_overview in podcast_overview.section_overviews:
@@ -161,8 +162,8 @@ async def generate_audio_chunk(client, voice, chunk, nr):
     return chunk_audio
 
 
-async def text_2_speech_openai(podcast: Podcast, voice):
-    client = AsyncOpenAI()
+async def text_2_speech_openai(podcast: Podcast, voice, openai_api_key):
+    client = AsyncOpenAI(api_key=openai_api_key)
     speech_file_path = Path(__file__).parent / "speech.mp3"
 
     print(f"Generating audio for voice {voice}, to file {speech_file_path}")
