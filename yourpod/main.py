@@ -1,9 +1,11 @@
 import streamlit as st
 import datetime
 import asyncio
-import generate
 from elevenlabs import clone, voices, set_api_key
 from tempfile import NamedTemporaryFile
+
+import generate
+import content
 
 st.set_page_config(
     page_title="YourPod.ai",
@@ -12,12 +14,14 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
+
 def initialize_session():
     keys = ['session_id', 'openai_api_key', 'elevenlabs_api_key',
             'openai_voice', 'elevenlabs_voice', 'voice_cloning_temp_file', 'podcast_length']
     for key in keys:
         if key not in st.session_state:
             st.session_state[key] = None
+
 
 initialize_session()
 
@@ -51,7 +55,7 @@ if elevenlabs_api_key:
                 with open(temp_file_name, "wb") as f:
                     f.write(voice_cloning_file.read())
                 st.session_state.elevenlabs_voice = clone(
-                    name="my_generated_voice_"+str(datetime.datetime.now()),
+                    name="my_generated_voice_" + str(datetime.datetime.now()),
                     description="Custom voice",
                     files=[temp_file_name],
                 )
@@ -64,10 +68,10 @@ else:
 
 # Main window
 with st.form("my_form"):
-    text = st.text_area("Create a podcast about...")
+    text = st.text_area("Create a podcast about...", content.get_random_wikipedia_article_title())
     submitted = st.form_submit_button("Generate")
     # Example texts (optional)
-    
+
     if submitted:
         if not st.session_state.openai_api_key:
             st.warning("Please enter your OpenAI API key!", icon="⚠️")
@@ -75,13 +79,19 @@ with st.form("my_form"):
             st.success("Generating podcast... This can take a few minutes.", icon="🎙")
             with st.spinner('Wait for it...'):
                 input_text = text
-                podcast_overview = generate.get_podcast_overview(input_text, st.session_state.podcast_length, openai_api_key=st.session_state.openai_api_key)
-                st.success(f"Outline Done! -- Title: {podcast_overview.title} -- Sections To Generate: {len(podcast_overview.section_overviews)}", icon="✅")
+                podcast_overview = generate.get_podcast_overview(input_text, st.session_state.podcast_length,
+                                                                 openai_api_key=st.session_state.openai_api_key)
+                st.success(
+                    f"Outline Done! -- Title: {podcast_overview.title} -- Sections To Generate: {len(podcast_overview.section_overviews)}",
+                    icon="✅")
                 podcast = generate.Podcast(**podcast_overview.dict(), length_in_minutes=0, transcript="", sections=[])
                 bar = st.progress(0, text="Generating sections...")
                 for nr, section_overview in enumerate(podcast_overview.section_overviews):
-                    bar.progress((nr+1)/len(podcast_overview.section_overviews), text=f"Generating section {nr+1}/{len(podcast_overview.section_overviews)}...")
-                    section = generate.get_podcast_section(podcast_overview, section_overview, podcast, desired_length=st.session_state.podcast_length, openai_api_key=st.session_state.openai_api_key)
+                    bar.progress((nr + 1) / len(podcast_overview.section_overviews),
+                                 text=f"Generating section {nr + 1}/{len(podcast_overview.section_overviews)}...")
+                    section = generate.get_podcast_section(podcast_overview, section_overview, podcast,
+                                                           desired_length=st.session_state.podcast_length,
+                                                           openai_api_key=st.session_state.openai_api_key)
                     if nr > 0 and section.sound_effect_intro:
                         podcast.transcript += "\n\n" + f"[{section.sound_effect_intro}]"
                     podcast.transcript += "\n\n" + section.transcript
@@ -95,5 +105,6 @@ with st.form("my_form"):
                     audio = generate.text_2_speech(podcast.transcript, st.session_state.elevenlabs_voice)
                 else:
                     # Use openai voice
-                    audio = asyncio.run(generate.text_2_speech_openai(podcast, st.session_state.openai_voice, openai_api_key=st.session_state.openai_api_key))
+                    audio = asyncio.run(generate.text_2_speech_openai(podcast, st.session_state.openai_voice,
+                                                                      openai_api_key=st.session_state.openai_api_key))
             st.audio(audio)
