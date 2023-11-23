@@ -9,13 +9,11 @@ from typing import Optional
 from tempfile import NamedTemporaryFile
 import os
 
-from utils import Sounds, export_and_return_raw
+from sound import Sounds, export_and_return_raw
 
 class PodcastSectionOverview(BaseModel):
     length_in_seconds: int = Field(..., description="The length of the section in seconds.")
     description: str = Field(..., description="List of high level episode content.")
-    sound_effect_intro: Optional[str] = Field(..., description="An optional sound effect to play between the last section and this section")
-
 
 class PodcastOverview(BaseModel):
     title: str
