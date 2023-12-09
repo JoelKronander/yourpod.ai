@@ -67,7 +67,6 @@ and describe the high level content, and length in minutes, and optionally sound
     print(f"Overview: {overview}")
     return overview
 
-
 def get_podcast_section(
     podcast_overview: PodcastOverview, section: PodcastSectionOverview, podcast: Podcast, desired_length: int, openai_api_key
 ) -> PodcastSection:
