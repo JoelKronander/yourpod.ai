@@ -9,11 +9,12 @@ from typing import Optional
 from tempfile import NamedTemporaryFile
 import os
 
-from sound import Sounds, export_and_return_raw
+from sound import export_and_return_raw
 
 class PodcastSectionOverview(BaseModel):
     length_in_seconds: int = Field(..., description="The length of the section in seconds.")
     description: str = Field(..., description="List of high level episode content.")
+    sound_effect_prompt: str = Field(..., description="A detailed description of what sound effect to play before this section")
 
 class PodcastOverview(BaseModel):
     title: str
@@ -30,7 +31,7 @@ class Podcast(PodcastOverview):
     transcript: str
     length_in_minutes: float
     sections: list[PodcastSection]
-    sounds: Sounds
+    sounds: [AudioSegment]
 
     class Config:
         arbitrary_types_allowed = True
@@ -50,8 +51,8 @@ Don't make the podcast too long, it should be about {podcast_length} minutes lon
 Use as few sections as possible to make the podcast about {podcast_length} minutes long.
 Between each section, you can optionally add a sound effect, note that that a sound effect might not be needed between all sections.
 
-Provide the title of the podcast, the description of the podcast, a visual description of the podcast cover image
-and describe the high level content, and length in minutes, and optionally sound effect for each section.
+Provide the title of the podcast, the description of the podcast and describe the high level content, and length in 
+minutes, and a description of sound effect that would be played before each section.
 """
     print(f"Prompt: {prompt}")
     overview: PodcastOverview = client.chat.completions.create(
@@ -128,17 +129,17 @@ def text_2_speech_elevenlabs(podcast, voice):
     chunks = [podcast.transcript[i: i + 4950] for i in range(0, len(podcast.transcript), 4950)]
 
     concatenated_audio = AudioSegment.empty()  # Creating an empty audio segment
-    concatenated_audio += podcast.sounds.intro_sound
+    if len(podcast.sounds) > 0 and podcast.sounds[0] is not None:
+        concatenated_audio += podcast.sounds[0]
+        if len(podcast.sounds) > 1:
+            print("Warning: only one sound effect is supported at the moment for Elevenlabs. Use openai for more sound "
+                  "effects.")
 
     for index, chunk in enumerate(chunks):
         chunk_audio = generate(text=chunk, voice=voice, model="eleven_multilingual_v2")
         # Assuming that the generate function represents mp3
         audio_segment = AudioSegment.from_mp3(io.BytesIO(chunk_audio))
         concatenated_audio += audio_segment
-        if index < len(chunks) - 1:
-            concatenated_audio += podcast.sounds.section_sound
-
-    concatenated_audio += podcast.sounds.outro_sound
 
     raw_audio_bytes = export_and_return_raw(concatenated_audio, audio_path)
     return raw_audio_bytes
@@ -183,14 +184,11 @@ async def text_2_speech_openai(podcast: Podcast, voice, openai_api_key):
     chunk_audios = await asyncio.gather(*tasks)
 
     concatenated_audio = AudioSegment.empty()
-    concatenated_audio += podcast.sounds.intro_sound
 
     for index, chunk_audio in enumerate(chunk_audios):
+        if index < len(podcast.sounds):
+            concatenated_audio += podcast.sounds[index]
         concatenated_audio += chunk_audio
-        if index < len(chunks) - 1:
-            concatenated_audio += podcast.sounds.section_sound
-
-    concatenated_audio += podcast.sounds.outro_sound
 
     raw_audio_bytes = export_and_return_raw(concatenated_audio, audio_path)
     return raw_audio_bytes

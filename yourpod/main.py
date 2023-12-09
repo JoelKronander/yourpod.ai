@@ -6,7 +6,7 @@ from tempfile import NamedTemporaryFile
 from pydub import AudioSegment
 
 import generate
-from sound import Sounds, set_replicate_api_key, generate_sound
+from sound import set_replicate_api_key, generate_sound
 
 import generate
 from topic_content import get_random_wikipedia_article_title
@@ -101,26 +101,25 @@ with st.form("my_form"):
                                                                  openai_api_key=st.session_state.openai_api_key)
                 st.success(f"Outline Done! -- Title: {podcast_overview.title} -- Sections To Generate: {len(podcast_overview.section_overviews)}", icon="✅")
 
-                no_sound = AudioSegment.empty()
-                all_sounds = Sounds(no_sound, no_sound, no_sound)
-                if replicate_api_key:
-                    st.success("Generating sounds...", icon="🎷")
-                    intro_sound = generate_sound("intro", podcast_overview.title)
-                    bridge_sound = generate_sound("section bridge", podcast_overview.title)
-                    all_sounds = Sounds(intro_sound, bridge_sound, intro_sound)
 
                 st.success("Generating main podcast content...", icon="📖")
-
                 podcast = generate.Podcast(**podcast_overview.model_dump(),
                                            length_in_minutes=0,
                                            transcript="",
                                            sections=[],
-                                           sounds=all_sounds)
+                                           sounds=[])
 
                 bar = st.progress(0, text="Generating sections...")
                 for nr, section_overview in enumerate(podcast_overview.section_overviews):
                     bar.progress((nr+1)/len(podcast_overview.section_overviews), text=f"Generating section {nr+1}/{len(podcast_overview.section_overviews)}...")
                     section = generate.get_podcast_section(podcast_overview, section_overview, podcast, desired_length=st.session_state.podcast_length, openai_api_key=st.session_state.openai_api_key)
+
+                    no_sound = AudioSegment.empty()
+                    if replicate_api_key and section_overview.sound_effect_prompt != None:
+                        st.success("Generating sounds...", icon="🎷")
+                        print("\nSound prompt: ", section_overview.sound_effect_prompt)
+                        section_sound = generate_sound(section_overview.sound_effect_prompt)
+                        podcast.sounds.append(section_sound)
 
                     podcast.transcript += "\n\n" + section.transcript
                     podcast.length_in_minutes += section.length_in_seconds / 60

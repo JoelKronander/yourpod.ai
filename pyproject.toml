@@ -17,6 +17,7 @@ pydub = "^0.25.1"
 openai = "^1.3.0"
 instructor = "^0.3.4"
 python-ffmpeg = "^2.0.4"
+replicate = "^0.22.0"
 
 
 [build-system]
