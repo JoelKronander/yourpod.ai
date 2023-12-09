@@ -8,6 +8,9 @@ from pydub import AudioSegment
 import generate
 from sound import Sounds, set_replicate_api_key, generate_sound
 
+import generate
+from topic_content import get_random_wikipedia_article_title
+
 st.set_page_config(
     page_title="YourPod.ai",
     page_icon="🎙",
@@ -21,7 +24,13 @@ def initialize_session():
 
     for key in keys:
         if key not in st.session_state:
+            if(key == 'random_default_topic'):
+                st.session_state['random_default_topic'] = get_random_wikipedia_article_title()
+                continue
+
             st.session_state[key] = None
+
+
 
 initialize_session()
 
@@ -55,7 +64,7 @@ if elevenlabs_api_key:
                 with open(temp_file_name, "wb") as f:
                     f.write(voice_cloning_file.read())
                 st.session_state.elevenlabs_voice = clone(
-                    name="my_generated_voice_"+str(datetime.datetime.now()),
+                    name="my_generated_voice_" + str(datetime.datetime.now()),
                     description="Custom voice",
                     files=[temp_file_name],
                 )
@@ -74,18 +83,22 @@ else:
 
 # Main window
 with st.form("my_form"):
-    text = st.text_area("Create a podcast about...")
+    topic = st.text_area("Create a podcast about...", placeholder=st.session_state['random_default_topic'])
+    if topic is None or topic == "":
+        topic = st.session_state['random_default_topic']
+
     submitted = st.form_submit_button("Generate")
     # Example texts (optional)
-    
+
     if submitted:
         if not st.session_state.openai_api_key:
             st.warning("Please enter your OpenAI API key!", icon="⚠️")
         else:
             st.success("Generating podcast... This can take a few minutes.", icon="🎙")
             with st.spinner('Wait for it...'):
-                input_text = text
-                podcast_overview = generate.get_podcast_overview(input_text, st.session_state.podcast_length, openai_api_key=st.session_state.openai_api_key)
+                podcast_overview = generate.get_podcast_overview(topic,
+                                                                 st.session_state.podcast_length,
+                                                                 openai_api_key=st.session_state.openai_api_key)
                 st.success(f"Outline Done! -- Title: {podcast_overview.title} -- Sections To Generate: {len(podcast_overview.section_overviews)}", icon="✅")
 
                 no_sound = AudioSegment.empty()
@@ -108,6 +121,7 @@ with st.form("my_form"):
                 for nr, section_overview in enumerate(podcast_overview.section_overviews):
                     bar.progress((nr+1)/len(podcast_overview.section_overviews), text=f"Generating section {nr+1}/{len(podcast_overview.section_overviews)}...")
                     section = generate.get_podcast_section(podcast_overview, section_overview, podcast, desired_length=st.session_state.podcast_length, openai_api_key=st.session_state.openai_api_key)
+
                     podcast.transcript += "\n\n" + section.transcript
                     podcast.length_in_minutes += section.length_in_seconds / 60
                     podcast.sections.append(section)
