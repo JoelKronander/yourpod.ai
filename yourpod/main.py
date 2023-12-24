@@ -127,7 +127,7 @@ with st.form("my_form"):
                     section = generate.get_podcast_section(podcast_overview, section_overview, podcast, desired_length=st.session_state.podcast_length, openai_api_key=st.session_state.openai_api_key)
 
                     no_sound = AudioSegment.empty()
-                    if replicate_api_key and section_overview.sound_effect_prompt != None:
+                    if st.session_state.replicate_api_key and section_overview.sound_effect_prompt != None:
                         st.success("Generating sounds...", icon="🎷")
                         print("\nSound prompt: ", section_overview.sound_effect_prompt)
                         section_sound = generate_sound(section_overview.sound_effect_prompt)
