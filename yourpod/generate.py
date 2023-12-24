@@ -1,23 +1,20 @@
 from openai import OpenAI, AsyncOpenAI
 import instructor
 from pydantic import BaseModel, Field
-from elevenlabs import voices, generate, set_api_key
-from aiohttp import ClientSession
+from elevenlabs import generate
 import asyncio
 from pydub import AudioSegment
 import io
 from typing import Optional
-from pathlib import Path
 from tempfile import NamedTemporaryFile
 import os
 
-
+from sound import export_and_return_raw
 
 class PodcastSectionOverview(BaseModel):
     length_in_seconds: int = Field(..., description="The length of the section in seconds.")
     description: str = Field(..., description="List of high level episode content.")
-    sound_effect_intro: Optional[str] = Field(..., description="An optional sound effect to play between the last section and this section")
-
+    sound_effect_prompt: str = Field(..., description="A detailed description of what sound effect to play before this section")
 
 class PodcastOverview(BaseModel):
     title: str
@@ -28,14 +25,16 @@ class PodcastOverview(BaseModel):
 class PodcastSection(BaseModel):
     length_in_seconds: int
     transcript: str
-    sound_effect_intro: Optional[str] = Field(..., description="A short description of optional sound effect to play between the last section and this section")
-
 
 class Podcast(PodcastOverview):
     """The full podcast, including the transcript."""
     transcript: str
     length_in_minutes: float
     sections: list[PodcastSection]
+    sounds: [AudioSegment]
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 def get_podcast_overview(input_text, podcast_length, openai_api_key) -> PodcastOverview:
@@ -52,8 +51,8 @@ Don't make the podcast too long, it should be about {podcast_length} minutes lon
 Use as few sections as possible to make the podcast about {podcast_length} minutes long.
 Between each section, you can optionally add a sound effect, note that that a sound effect might not be needed between all sections.
 
-Provide the title of the podcast, the description of the podcast, a visual description of the podcast cover image
-and describe the high level content, and length in minutes, and optionally sound effect for each section.
+Provide the title of the podcast, the description of the podcast and describe the high level content, and length in 
+minutes, and a description of sound effect that would be played before each section.
 """
     print(f"Prompt: {prompt}")
     overview: PodcastOverview = client.chat.completions.create(
@@ -68,7 +67,8 @@ and describe the high level content, and length in minutes, and optionally sound
     return overview
 
 def get_podcast_section(
-    podcast_overview: PodcastOverview, section: PodcastSectionOverview, podcast: Podcast, desired_length: int, openai_api_key
+        podcast_overview: PodcastOverview, section: PodcastSectionOverview, podcast: Podcast, desired_length: int,
+        openai_api_key
 ) -> PodcastSection:
     client = instructor.patch(OpenAI(api_key=openai_api_key))
     """Generate a podcast section from a podcast overview."""
@@ -109,7 +109,7 @@ def get_podcast(input_text: str, podcast_length: int, openai_api_key) -> Podcast
     podcast: Podcast = Podcast(**podcast_overview.dict(), length_in_minutes=0, transcript="", sections=[])
     for section_overview in podcast_overview.section_overviews:
         section = get_podcast_section(podcast_overview, section_overview, podcast, desired_length=podcast_length)
-        podcast.transcript += "\n\n\n" + f"[{section.sound_effect_intro}]" + "\n\n" + section.transcript 
+        podcast.transcript += "\n\n" + section.transcript
         podcast.length_in_minutes += section.length_in_seconds / 60
         podcast.sections.append(section)
 
@@ -121,28 +121,27 @@ def get_podcast_image(cover_image_description: str) -> str:
     return "https://www.google.com/url?sa=i&url=https%3A%2F%2Funsplash.com%2Fs%2Fphotos%2Fnatural&psig=AOvVaw1j_-1b18H9E8vIIJXnVbGE&ust=1700202091318000&source=images&cd=vfe&ved=0CBIQjRxqFwoTCKichsDwx4IDFQAAAAAdAAAAABAE"
 
 
-def text_2_speech(prompt, voice):
-    audio_path = f"temp.mp3"
+def text_2_speech_elevenlabs(podcast, voice):
+    audio_path = f"./data/yourpod.mp3"
     print(f"Generating audio for voice {voice}, to file {audio_path}")
 
     # split prompt into chunks less than 5000 characters
-    chunks = [prompt[i : i + 4950] for i in range(0, len(prompt), 4950)]
+    chunks = [podcast.transcript[i: i + 4950] for i in range(0, len(podcast.transcript), 4950)]
 
     concatenated_audio = AudioSegment.empty()  # Creating an empty audio segment
-    for chunk in chunks:
+    if len(podcast.sounds) > 0 and podcast.sounds[0] is not None:
+        concatenated_audio += podcast.sounds[0]
+        if len(podcast.sounds) > 1:
+            print("Warning: only one sound effect is supported at the moment for Elevenlabs. Use openai for more sound "
+                  "effects.")
+
+    for index, chunk in enumerate(chunks):
         chunk_audio = generate(text=chunk, voice=voice, model="eleven_multilingual_v2")
         # Assuming that the generate function represents mp3
         audio_segment = AudioSegment.from_mp3(io.BytesIO(chunk_audio))
         concatenated_audio += audio_segment
 
-    # Export concatenated audio to a file
-    concatenated_audio.export(audio_path, format="mp3")
-
-    # Get raw audio bytes to return
-    buffer = io.BytesIO()
-    concatenated_audio.export(buffer, format="mp3")
-    raw_audio_bytes = buffer.getvalue()
-
+    raw_audio_bytes = export_and_return_raw(concatenated_audio, audio_path)
     return raw_audio_bytes
 
 
@@ -162,11 +161,10 @@ async def generate_audio_chunk(client, voice, chunk, nr):
 
 
 async def text_2_speech_openai(podcast: Podcast, voice, openai_api_key):
+    audio_path = f"./data/yourpod.mp3"
+    print(f"Generating audio for voice {voice}, to file {audio_path}")
+
     client = AsyncOpenAI(api_key=openai_api_key)
-    speech_file_path = Path(__file__).parent / "speech.mp3"
-
-    print(f"Generating audio for voice {voice}, to file {speech_file_path}")
-
     chunks = [section.transcript for section in podcast.sections]
 
     # make sure that each chunk is less than 4000 characters, otherwise split the chunk in two entries
@@ -185,16 +183,16 @@ async def text_2_speech_openai(podcast: Podcast, voice, openai_api_key):
         tasks.append(generate_audio_chunk(client, voice, chunk, nr))
     chunk_audios = await asyncio.gather(*tasks)
 
-    concatenated_audio = AudioSegment.empty()  # Creating an empty audio segment
-    for chunk_audio in chunk_audios:
+    concatenated_audio = AudioSegment.empty()
+
+    for index, chunk_audio in enumerate(chunk_audios):
+        if index < len(podcast.sounds):
+            concatenated_audio += podcast.sounds[index]
         concatenated_audio += chunk_audio
 
-    # Export concatenated audio to a file
-    with NamedTemporaryFile(suffix=".mp3", delete=True) as temp_file:
-        temp_file_path = temp_file.name  # Get the file path
-        concatenated_audio.export(temp_file_path, format="mp3")
-        # read audio file and return raw bytes
-        with open(temp_file_path, "rb") as f:
-            raw_audio_bytes = f.read()
-
+    raw_audio_bytes = export_and_return_raw(concatenated_audio, audio_path)
     return raw_audio_bytes
+
+
+
+
