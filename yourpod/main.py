@@ -4,6 +4,7 @@ import asyncio
 from elevenlabs import clone, voices, set_api_key
 from tempfile import NamedTemporaryFile
 from pydub import AudioSegment
+import os 
 
 import generate
 from sound import set_replicate_api_key, generate_sound
@@ -37,9 +38,14 @@ initialize_session()
 st.title("YourPod.ai")
 
 # Sidebar controls
-openai_api_key = st.sidebar.text_input("OpenAI API Key")
-if openai_api_key.startswith("sk-"):
-    st.session_state.openai_api_key = openai_api_key
+# check if OPENAI_API_KEY env var is set else request it from user
+if 'OPENAI_API_KEY' in os.environ:
+    st.session_state.openai_api_key = os.environ['OPENAI_API_KEY']
+else:
+    openai_api_key = st.sidebar.text_input("OpenAI API Key")
+    if openai_api_key.startswith("sk-"):
+        st.session_state.openai_api_key = openai_api_key
+if st.session_state.openai_api_key:
     st.session_state.podcast_length = st.sidebar.slider(
         "How long would you like the podcast to be? (mins)", 2, 25, 5
     )
@@ -49,10 +55,12 @@ if openai_api_key.startswith("sk-"):
 else:
     st.sidebar.warning("Please enter your Open AI key", icon="⚠️")
 
-elevenlabs_api_key = st.sidebar.text_input("Elevenlabs API Key")
-if elevenlabs_api_key:
-    st.session_state.elevenlabs_api_key = elevenlabs_api_key
-    set_api_key(elevenlabs_api_key)
+if 'ELEVENLABS_API_TOKEN' in os.environ:
+    st.session_state.elevenlabs_api_key = os.environ['ELEVENLABS_API_TOKEN']
+else:
+    st.session_state.elevenlabs_api_key = st.sidebar.text_input("Elevenlabs API Token")
+if st.session_state.elevenlabs_api_key:
+    set_api_key(st.session_state.elevenlabs_api_key)
     voice_cloning = st.sidebar.checkbox("Voice cloning")
     if voice_cloning:
         voice_cloning_file = st.sidebar.file_uploader(
@@ -73,13 +81,16 @@ if elevenlabs_api_key:
             "Pick your podcast host voice.", [v.name for v in voices()]
         )
 else:
-    st.sidebar.warning("Please enter your Elevenlabs API key for more custom voices and voice cloning.", icon="⚠️")
+    st.sidebar.warning("Please enter your Elevenlabs API token for more custom voices and voice cloning.", icon="⚠️")
 
-replicate_api_key = st.sidebar.text_input("Replicate API Key")
-if replicate_api_key:
-    set_replicate_api_key(replicate_api_key)
+if 'REPLICATE_API_TOKEN' in os.environ:
+    st.session_state.replicate_api_key = os.environ['REPLICATE_API_TOKEN']
 else:
-    st.sidebar.warning("Please enter your Replicate AI key", icon="⚠️")
+     st.session_state.replicate_api_key = st.sidebar.text_input("Replicate API Key")
+if  st.session_state.replicate_api_key:
+    set_replicate_api_key( st.session_state.replicate_api_key)
+else:
+    st.sidebar.warning("Please enter your Replicate API token", icon="⚠️")
 
 # Main window
 with st.form("my_form"):
