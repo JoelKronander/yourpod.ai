@@ -49,9 +49,10 @@ if st.session_state.openai_api_key:
     st.session_state.podcast_length = st.sidebar.slider(
         "How long would you like the podcast to be? (mins)", 2, 25, 5
     )
-    st.session_state.openai_voice = st.sidebar.selectbox(
-        "Pick your OpenAI podcast host voice.", ["alloy", "echo", "fable", "onyx", "nova", "shimmer"], index=5
-    )
+    if not st.session_state.elevenlabs_api_key:
+        st.session_state.openai_voice = st.sidebar.selectbox(
+            "Pick your OpenAI podcast host voice.", ["alloy", "echo", "fable", "onyx", "nova", "shimmer"], index=5
+        )
 else:
     st.sidebar.warning("Please enter your Open AI key", icon="⚠️")
 
