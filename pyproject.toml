@@ -9,7 +9,7 @@ packages = [{include = "yourpod"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-streamlit = "^1.27.2"
+streamlit = "^1.30.0"
 elevenlabs = "^0.2.26"
 langchain = "^0.0.329"
 buzzsprout-manager = "^0.0.3"
