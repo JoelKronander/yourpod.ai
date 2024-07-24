@@ -12,15 +12,14 @@ import os
 from sound import export_and_return_raw
 
 class PodcastSectionOverview(BaseModel):
-    length_in_seconds: int = Field(..., description="The length of the section in seconds.")
-    description: str = Field(..., description="List of high level episode content.")
-    sound_effect_prompt: str = Field(..., description="A detailed description of what sound effect to play before this section")
+    length_in_seconds: int = Field(..., description="The length of the subsection in seconds.")
+    description: str = Field(..., description="The content of the subsection on a high level.")
+    sound_effect_prompt: str = Field(..., description="A detailed textual description in one sentence of what sound effect to play before this subsection")
 
 class PodcastOverview(BaseModel):
     title: str
     description: str
     section_overviews: list[PodcastSectionOverview]
-
 
 class PodcastSection(BaseModel):
     length_in_seconds: int
@@ -40,23 +39,24 @@ class Podcast(PodcastOverview):
 def get_podcast_overview(input_text, podcast_length, openai_api_key) -> PodcastOverview:
     client = instructor.patch(OpenAI(api_key=openai_api_key))
     prompt = f"""
-You are a podcast producer that has been asked to produce a podcast on {input_text}.
-The podcast should be about {podcast_length} minutes long. 
-A single host will be reading the podcast transcript. Plase make it to the point, but also engaging.
+You are producing a podcast on the topic of: {input_text}.
 
-Write a outline of the podcast, consisting of several sections.
-Each section will be read one after the other as a contionus podcast with no breaks in between.
-Each section should be between 2 and 4 minutes long.
-Don't make the podcast too long, it should be about {podcast_length} minutes long. 
-Use as few sections as possible to make the podcast about {podcast_length} minutes long.
+The podcast should be about {podcast_length} minutes long. 
+A single host will be reading the podcast transcript. Plase make it to the point, but also engaging and fun.
+
+First write an outline of the podcast on a high level. We will strucutre the podcast into subsections, that will be read consecutively
+by the host in one go. Each subsection should be about 2-3 minutes long. 
+
+We are aiming for a total of {podcast_length} minutes, so you can have about {podcast_length // 3} subsections.
+
 Between each section, you can optionally add a sound effect, note that that a sound effect might not be needed between all sections.
 
-Provide the title of the podcast, the description of the podcast and describe the high level content, and length in 
-minutes, and a description of sound effect that would be played before each section.
+Provide the title of the podcast, a summary description of the podcast, and describe the high level content as a list of about {podcast_length // 3} subsections. 
+And for each subsection, provide a short description of the contentm the estimated length in seconds, and a prompt for n optional sound effect to play before the subsection.
 """
     print(f"Prompt: {prompt}")
     overview: PodcastOverview = client.chat.completions.create(
-        model="gpt-4-1106-preview",
+        model="gpt-4o-mini",
         response_model=PodcastOverview,
         messages=[
             {"role": "user", "content": prompt},
@@ -71,29 +71,28 @@ def get_podcast_section(
         openai_api_key
 ) -> PodcastSection:
     client = instructor.patch(OpenAI(api_key=openai_api_key))
-    """Generate a podcast section from a podcast overview."""
+    """Generate a podcast section from a podcast section overview."""
     prompt = f"""
 You are a podcast host that is explaining {podcast_overview.title} to your audience.
 The podcast is about {podcast_overview.description}.
 
-The podcast has the following episodes, with estimated length in seconds:
+The podcast has the following subsections, with estimated length in seconds:
 {[[s.description, s.length_in_seconds] for s in podcast_overview.section_overviews]}
 
 Before this section, the transcript is:
 {podcast.transcript}
 
 You are now writing the detailed transcript for the section {section.description}.
-The transcipt for this section was initally estimated to be about {section.length_in_seconds} seconds to read, but please adjust it as needed to stay make the complete podcast about {desired_length} minutes long.
-The estimated length of the podcast so far is {podcast.length_in_minutes}. 
-The podcast should be about {desired_length} minutes long, so there is about {desired_length - podcast.length_in_minutes} minutes left for the rest of the podcast sections.
-A single host will be reading the podcast transcript. Plase make it to the point, but also engaging.
+The transcipt for this section was initally estimated to be about {section.length_in_seconds} seconds to read.
 
 Write the detailed transcript for this podcast section. 
 It will be concatenated with the other sections to form the full podcast transcript.
+
+The podcast sections will be read one after the other by the host, so make sure that the transition between sections is smooth and the flow is engaging.
 """
     print(f"Prompt: {prompt}")
     section: PodcastSection = client.chat.completions.create(
-        model="gpt-4-1106-preview",
+        model="gpt-4o-mini",
         response_model=PodcastSection,
         messages=[
             {"role": "user", "content": prompt},
