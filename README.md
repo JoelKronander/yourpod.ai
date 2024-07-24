@@ -1,5 +1,5 @@
 # YourPod ai
-YourPod ai is a demo web application using streamlit that enables users to create custom podcasts on any topic.
+YourPod.ai let's you create your own custom podcasts on any topic.
 Using OpenAI GPT4, OpenAI TTS, or ElevenLabs Voice Cloning, YourPod ai generates a podcast transcript and audio file based on a user-provided topic.
 The user can also upload an audio file to clone the voice of the speaker. The podcast can then be downloaded.
 
