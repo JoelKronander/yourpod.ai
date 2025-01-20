@@ -106,6 +106,60 @@ async def text_2_speech_elevenlabs_async(text: str, voice: str) -> bytes:
         raise
 
 @timing_decorator
+async def generate_background_music(prompt: str) -> Optional[AudioSegment]:
+    """
+    Generate background music using Replicate's Stable Audio model
+    
+    Args:
+        prompt: Text description of the desired music
+        
+    Returns:
+        AudioSegment if successful, None if failed
+    """
+    try:
+        # Run the Stable Audio model
+        output = replicate.run(
+            "stackadoc/stable-audio-open-1.0:9aff84a639f96d0f7e6081cdea002d15133d0043727f849c40abdd166b7c75a8",
+            input={"prompt": prompt}
+        )
+        
+        # Download and convert to AudioSegment
+        response = requests.get(output)
+        audio = AudioSegment.from_file(io.BytesIO(response.content), format="wav")
+        return audio.fade_in(1000).fade_out(1000)
+        
+    except Exception as e:
+        logger.error(f"Error generating background music: {e}")
+        return None
+
+@timing_decorator
+async def generate_transition_effect(style: str) -> Optional[AudioSegment]:
+    """Generate transition sound effect based on podcast style"""
+    style_effect_map = {
+        "Interview": "short subtle transition whoosh",
+        "News Report": "professional news transition sound",
+        "Story Narrative": "storytelling transition sound effect",
+        "Comedy Podcast": "playful transition sound effect",
+    }
+    
+    prompt = style_effect_map.get(style, "short subtle podcast transition sound")
+    try:
+        output = replicate.run(
+            "stackadoc/stable-audio-open-1.0:9aff84a639f96d0f7e6081cdea002d15133d0043727f849c40abdd166b7c75a8",
+            input={
+                "prompt": prompt,
+                "duration": 2,
+            }
+        )
+        
+        response = requests.get(output)
+        audio = AudioSegment.from_file(io.BytesIO(response.content), format="wav")
+        return audio.fade_in(200).fade_out(200)
+    except Exception as e:
+        logger.error(f"Error generating transition effect: {e}")
+        return None
+
+@timing_decorator
 async def text_2_speech_elevenlabs_improved(
     podcast: Podcast,
     host_voice: str,
@@ -131,18 +185,16 @@ async def text_2_speech_elevenlabs_improved(
         # Combine segments into one audio stream
         combined_audio = b''.join(audio_segments)
         
-        # If effects are enabled, add them
-        if add_effects:
-            # Convert bytes to AudioSegment
-            audio_segment = AudioSegment.from_mp3(io.BytesIO(combined_audio))
-            # Add fade in/out effects
-            audio_segment = audio_segment.fade_in(1000).fade_out(1000)
-            # Convert back to bytes
-            buffer = io.BytesIO()
-            audio_segment.export(buffer, format="mp3")
-            return buffer.getvalue()
-            
-        return combined_audio
+        # Convert to AudioSegment for basic processing
+        audio_segment = AudioSegment.from_mp3(io.BytesIO(combined_audio))
+        
+        # Add simple fade effects
+        audio_segment = audio_segment.fade_in(1000).fade_out(1000)
+        
+        # Convert back to bytes
+        buffer = io.BytesIO()
+        audio_segment.export(buffer, format="mp3")
+        return buffer.getvalue()
         
     except Exception as e:
         logger.error(f"Error generating audio: {str(e)}")

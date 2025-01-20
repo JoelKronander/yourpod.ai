@@ -71,57 +71,28 @@ def main():
         page_title="YourPod.ai",
         page_icon="🎙",
         layout="centered",
-        initial_sidebar_state="expanded",
     )
     
-    # Clean header
     st.title("🎙️ YourPod.ai")
     st.markdown("##### Create AI-powered podcasts on any topic")
     
     initialize_session()
 
-    # Organize sidebar into clear sections
+    # Simplified sidebar with essential settings only
     with st.sidebar:
-        st.subheader("⚙️ Podcast Settings")
+        st.subheader("⚙️ Settings")
         
-        # Core settings in an expander
-        with st.expander("Content Settings", expanded=True):
+        with st.expander("Podcast Settings", expanded=True):
             st.session_state.podcast_style = st.selectbox(
                 "Format",
                 [
-                    "Casual Deep Dive",
                     "Interview",
                     "Solo Host",
-                    "News Report",
-                    "Educational",
                     "Story Narrative",
-                    "Comedy Podcast",
-                    "Debate Style"
                 ],
                 help="Select the style/format of your podcast"
             )
             
-            st.session_state.conversation_depth = st.select_slider(
-                "Conversation Depth",
-                options=["Light", "Moderate", "Deep Dive"],
-                value="Moderate",
-                help="Choose how deep the conversation should go into topics"
-            )
-            
-            st.session_state.controversy_level = st.select_slider(
-                "Controversy Level",
-                options=["Safe", "Balanced", "Spicy"],
-                value="Balanced",
-                help="Choose how controversial the takes should be"
-            )
-            
-            st.session_state.tone = st.select_slider(
-                "Tone",
-                options=["Formal", "Balanced", "Casual"],
-                value="Balanced",
-                help="Choose how formal or casual the conversation should be"
-            )
-
             st.session_state.podcast_length = st.slider(
                 "Length (minutes)",
                 min_value=1,
@@ -130,7 +101,7 @@ def main():
                 help="Choose the approximate length of your podcast"
             )
         
-        # Voice settings in a separate expander
+        # Voice settings
         if st.session_state.elevenlabs_api_key:
             with st.expander("Voice Settings", expanded=True):
                 available_voices = [v.name for v in voices()]
@@ -139,14 +110,12 @@ def main():
                     "Host Voice",
                     available_voices,
                     index=0,
-                    key="host_voice_select"
                 )
                 
                 st.session_state.guest_voice = st.selectbox(
                     "Guest Voice",
                     available_voices,
                     index=min(1, len(available_voices)-1),
-                    key="guest_voice_select"
                 )
         else:
             st.warning("Enter your Elevenlabs API key to select voices", icon="⚠️")
@@ -158,30 +127,8 @@ def main():
             placeholder=st.session_state['random_default_topic'],
             help="Enter your topic or click Generate to use the example topic"
         ) or st.session_state['random_default_topic']
-        
-        # Advanced options in an expander
-        with st.expander("Advanced Options"):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.session_state.include_intro = st.checkbox(
-                    "Include Intro/Outro",
-                    value=True,
-                    help="Add professional podcast introduction and conclusion"
-                )
-            with col2:
-                st.session_state.add_sound_effects = st.checkbox(
-                    "Add Sound Effects",
-                    value=True,
-                    help="Include subtle background music and transitions"
-                )
-            
-            st.session_state.key_points = st.text_area(
-                "Key Points (Optional)",
-                placeholder="Enter specific points to cover (one per line)",
-                help="Leave blank for AI to determine the content structure"
-            )
 
-        # Center the generate button and make it prominent
+        # Center the generate button
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             generate_button = st.form_submit_button(
@@ -203,45 +150,41 @@ def main():
                 st.warning("Please enter your ElevenLabs API key!", icon="⚠️")
                 return
 
-            state = PodcastGenerationState()
-            
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            # Generate podcast content
-            state.stage = "Creating podcast content"
-            status_text.text(state.stage)
-            progress_bar.progress(20)
-            
             try:
                 async def run_generation():
+                    # Generate content
+                    status_text.text("Creating podcast content...")
+                    progress_bar.progress(20)
+                    
                     podcast = await generate.generate_podcast_async(
                         topic,
                         st.session_state.podcast_length,
                         st.session_state.openai_api_key,
                         style=st.session_state.podcast_style,
-                        tone=st.session_state.tone,
-                        key_points=st.session_state.key_points
+                        tone="Balanced",
+                        host_voice=st.session_state.host_voice,
+                        guest_voice=st.session_state.guest_voice
                     )
                     
                     progress_bar.progress(60)
                     st.success(f"Content generated: {podcast.title}", icon="✅")
                     
                     # Generate audio
-                    state.stage = "Creating audio"
-                    status_text.text(state.stage)
+                    status_text.text("Creating audio...")
                     progress_bar.progress(80)
                     
                     audio = await text_2_speech_elevenlabs_improved(
                         podcast,
                         host_voice=st.session_state.host_voice,
                         guest_voice=st.session_state.guest_voice,
-                        add_effects=st.session_state.add_sound_effects
+                        add_effects=True
                     )
                     
                     return podcast, audio
 
-                # Run the async operations
                 podcast, audio = asyncio.run(run_generation())
                 
                 progress_bar.progress(100)
